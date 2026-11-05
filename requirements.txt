@@ -1,0 +1,5 @@
+numpy
+pandas
+numba        # optional but ~100x faster scheduling
+yfinance     # optional, for iog.forecast price download
+matplotlib   # only for the original scheduling_lib.py gantt chart

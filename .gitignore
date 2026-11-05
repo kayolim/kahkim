@@ -1,0 +1,4 @@
+__pycache__/
+data/t_*.csv
+data/t2_*.csv
+plans/
