@@ -107,7 +107,7 @@ def sequence_lots(lots, seq_time):
 
 
 # ----------------------------------------------------------------------------- materials
-def plan_material(mat, req, dates, today, on_hand):
+def plan_material(mat, req, dates, today, on_hand, receipts=()):
     """Wagner-Whitin with lead time. req[k] = units needed on dates[k].
 
     An order placed on day o arrives o+LT and is usable that day. Orders can be placed on any
@@ -117,7 +117,9 @@ def plan_material(mat, req, dates, today, on_hand):
     T = len(dates)
     net = np.array(req, dtype=np.int64)
     stock = int(on_hand)
+    arrivals = dict(receipts)  # {date: qty} of orders already placed
     for k in range(T):
+        stock += arrivals.get(dates[k], 0)
         use = min(stock, net[k])
         net[k] -= use
         stock -= use
@@ -183,6 +185,8 @@ def main(argv=None):
     ap.add_argument("--mat", nargs="*", help="material stock, e.g. M1=24000 M2=318000 M3=16000")
     ap.add_argument("--buffer", nargs="*", help="safety margin on forecast, e.g. P1=0.03 P2=0.05")
     ap.add_argument("--holidays", nargs="*", default=[])
+    ap.add_argument("--receipts", nargs="*", default=[],
+                    help="orders already placed, e.g. M2=2026-11-09:1800000")
     ap.add_argument("--seq-time", type=float, default=10.0, help="IG seconds per lot")
     ap.add_argument("--commit-days", type=int, default=7, help="days whose plan you will enter")
     a = ap.parse_args(argv)
@@ -223,13 +227,19 @@ def main(argv=None):
     for l in all_lots:
         for m, k in G.BOM[l["product"]].items():
             req[m][idx[l["date"]]] += k * l["qty"]
+    rec = {m: {} for m in G.MATERIALS}
+    for r in a.receipts:
+        m, rest = r.split("=")
+        d, q = rest.split(":")
+        rec[m][date.fromisoformat(d)] = rec[m].get(date.fromisoformat(d), 0) + int(q)
     orders = []
     for m in G.MATERIALS:
-        c, o, left = plan_material(m, tuple(req[m]), dates, today, mat.get(m, G.MATERIALS[m]["init"]))
+        c, o, left = plan_material(m, tuple(req[m]), dates, today, mat.get(m, G.MATERIALS[m]["init"]),
+                                   tuple(rec[m].items()))
         orders += o
         print(f"{m}: need {int(req[m].sum()):,}, ordering cost+holding {c:,}, stock left after horizon {left:,}")
     for o in sorted(orders, key=lambda o: (o["order_date"] or o["arrival"])):
-        print(f"  {o['order_type']:<8} {m if False else o['material']} order {o['order_date']} -> arrive {o['arrival']}  qty {o['qty']:,}")
+        print(f"  {o['order_type']:<8} {o['material']} order {o['order_date']} -> arrive {o['arrival']}  qty {o['qty']:,}")
 
     pd.DataFrame(all_lots).drop(columns="sequence").to_csv(outdir / "production.csv", index=False)
     pd.DataFrame(orders).to_csv(outdir / "materials.csv", index=False)
